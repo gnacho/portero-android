@@ -28,6 +28,7 @@ class CallViewModel(
     private val mic = MicStreamer()
     private var talkCall: Call? = null
     private var pollJob: Job? = null
+    private var wasActive = false
 
     init {
         poll()
@@ -40,7 +41,10 @@ class CallViewModel(
                 val result = runCatching { withContext(Dispatchers.IO) { api.state(settings) } }
                 result.onSuccess { event ->
                     _state.value = _state.value.copy(callState = event.call, ringing = event.ringing)
-                    if (!event.active) stopTalk()
+                    // Only end the microphone when a call that was active finishes.
+                    // Talking while idle is allowed: it is the intercom.
+                    if (wasActive && !event.active) stopTalk()
+                    wasActive = event.active
                 }.onFailure {
                     _state.value = _state.value.copy(callState = "sin conexión")
                 }
@@ -98,7 +102,11 @@ class CallViewModel(
             talkCall = null
             _state.value = _state.value.copy(
                 microphone = false,
-                message = if (error == null) null else "Audio: ${error.message}",
+                message = when {
+                    error == null -> null
+                    error.message == "Canceled" -> "Audio: cancelado"
+                    else -> "Audio: ${error.message}"
+                },
             )
         }
     }
