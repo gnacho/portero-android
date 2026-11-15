@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Portero</string>
+    <string name="channel_call">Llamada del portero</string>
+    <string name="channel_service">Portero conectado</string>
+</resources>
