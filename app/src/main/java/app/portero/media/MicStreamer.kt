@@ -54,6 +54,7 @@ class MicStreamer {
             aec = AcousticEchoCanceler.create(record.audioSessionId)?.apply { enabled = true }
         }
 
+        android.util.Log.i("MicStreamer", "start: source=VOICE_COMMUNICATION rate=$SAMPLE_RATE buffer=$size")
         recorder = record
         running = true
         record.startRecording()
@@ -73,6 +74,7 @@ class MicStreamer {
 
     fun stop() {
         if (!running) return
+        android.util.Log.i("MicStreamer", "stop")
         running = false
         frames.offer(ByteArray(0))
         worker?.join(500)
@@ -89,6 +91,10 @@ class MicStreamer {
 
     fun body(): RequestBody = object : RequestBody() {
         override fun contentType() = "audio/basic".toMediaType()
+
+        // A live microphone stream can not be replayed: tell OkHttp so it does
+        // not try to retry the request with an empty queue.
+        override fun isOneShot(): Boolean = true
 
         override fun writeTo(sink: BufferedSink) {
             while (true) {

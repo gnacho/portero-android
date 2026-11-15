@@ -77,15 +77,20 @@ class PorteroApi(private val client: OkHttpClient = defaultClient()) {
             .build()
 
     fun startTalk(settings: Settings, body: RequestBody, onDone: (Throwable?) -> Unit): Call {
+        android.util.Log.i("PorteroApi", "talk: opening ${settings.talkUrl()}")
         val call = client.newBuilder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .writeTimeout(0, TimeUnit.MILLISECONDS)
             .build()
             .newCall(talkRequest(settings, body))
         call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) = onDone(e)
+            override fun onFailure(call: Call, e: IOException) {
+                android.util.Log.w("PorteroApi", "talk failed: ${e::class.simpleName}: ${e.message}", e)
+                onDone(e)
+            }
             override fun onResponse(call: Call, response: Response) {
                 response.use {
+                    android.util.Log.i("PorteroApi", "talk closed with ${it.code}")
                     onDone(if (it.isSuccessful) null else IOException("talk ${it.code}"))
                 }
             }
