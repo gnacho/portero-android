@@ -77,13 +77,27 @@ class CallViewModel(
             _state.value = _state.value.copy(
                 busy = false,
                 message = when {
-                    error != null -> "Error: ${error.message}"
+                    error != null -> friendlyError(error)
                     action == CallAction.OPEN -> "Puerta abierta"
                     action == CallAction.HANGUP -> "Llamada colgada"
                     action == CallAction.REJECT -> "Llamada rechazada"
                     else -> "Llamada contestada"
                 },
             )
+        }
+    }
+
+    private fun friendlyError(error: Throwable): String {
+        val text = error.message.orEmpty()
+        return when {
+            text.contains("not verified") || text.contains("certificate") ->
+                "Certificado no válido: el dominio apunta a otro servidor (DNS)"
+            text.contains("Unable to resolve host") ->
+                "No se pudo resolver el servidor"
+            text.contains("Failed to connect") || text.contains("timeout") ->
+                "No se pudo conectar con el servidor"
+            text.isBlank() -> error::class.simpleName ?: "Error"
+            else -> text.lineSequence().first().take(140)
         }
     }
 
@@ -105,7 +119,7 @@ class CallViewModel(
                 message = when {
                     error == null -> null
                     error.message == "Canceled" -> "Audio: cancelado"
-                    else -> "Audio: ${error.message}"
+                    else -> "Audio: ${friendlyError(error)}"
                 },
             )
         }
