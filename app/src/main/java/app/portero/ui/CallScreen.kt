@@ -36,6 +36,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
@@ -149,12 +150,20 @@ private fun VideoSurface(url: String, token: String, modifier: Modifier = Modifi
         val dataSource = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
             .setAllowCrossProtocolRedirects(true)
-        ExoPlayer.Builder(context).build().apply {
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(500, 3000, 300, 300)
+            .build()
+        ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
             val source = HlsMediaSource.Factory(dataSource)
                 .createMediaSource(
                     MediaItem.Builder()
                         .setUri(url)
                         .setMimeType(MimeTypes.APPLICATION_M3U8)
+                        .setLiveConfiguration(
+                            MediaItem.LiveConfiguration.Builder()
+                                .setTargetOffsetMs(1_200)
+                                .build(),
+                        )
                         .build(),
                 )
             setMediaSource(source)

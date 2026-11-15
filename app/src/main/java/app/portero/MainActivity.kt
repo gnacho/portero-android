@@ -74,15 +74,16 @@ class MainActivity : ComponentActivity() {
                             },
                         )
                         showCall -> {
+                            androidx.compose.runtime.LaunchedEffect(Unit) { dismissRing() }
                             val vm = remember(current) { CallViewModel(app.api, current) }
                             val state by vm.state.collectAsStateWithLifecycle()
                             CallScreen(
                                 url = current.hlsUrl(),
                                 token = current.token,
                                 state = state,
-                                onAnswer = vm::answer,
-                                onHangup = vm::hangup,
-                                onReject = { vm.reject(); showCall = false },
+                                onAnswer = { dismissRing(); vm.answer() },
+                                onHangup = { dismissRing(); vm.hangup() },
+                                onReject = { dismissRing(); vm.reject(); showCall = false },
                                 onOpenDoor = vm::openDoor,
                                 onToggleMic = vm::toggleMic,
                             )
@@ -114,6 +115,11 @@ class MainActivity : ComponentActivity() {
             Uri.parse("package:$packageName"),
         )
         runCatching { startActivity(intent) }
+    }
+
+    /** Stops the ringtone and removes the call notification. */
+    private fun dismissRing() {
+        startService(Intent(this, CallService::class.java).setAction(CallService.ACTION_DISMISS))
     }
 
     private fun requestPermissionsIfNeeded() {
