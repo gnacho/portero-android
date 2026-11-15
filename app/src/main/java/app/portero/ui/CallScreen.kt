@@ -16,10 +16,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.PhoneDisabled
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 
 data class CallUiState(
     val callState: String = "unknown",
+    val ringing: Boolean = false,
     val microphone: Boolean = false,
     val busy: Boolean = false,
     val message: String? = null,
@@ -58,13 +60,25 @@ fun CallScreen(
     state: CallUiState,
     onAnswer: () -> Unit,
     onHangup: () -> Unit,
-    onReject: () -> Unit,
+    onBack: () -> Unit,
     onOpenDoor: () -> Unit,
     onToggleMic: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().background(Color.Black)) {
-        VideoSurface(url = url, token = token, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+        Box {
+            VideoSurface(url = url, token = token, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Cerrar",
+                    tint = Color.White,
+                )
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Text(
             text = "Estado: ${state.callState}",
@@ -81,15 +95,29 @@ fun CallScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ActionButton("Contestar", Icons.Filled.Call, Color(0xFF2FBF71), enabled = !state.busy, onClick = onAnswer, modifier = Modifier.weight(1f))
-            ActionButton("Colgar", Icons.Filled.CallEnd, Color(0xFFE0574F), enabled = !state.busy, onClick = onHangup, modifier = Modifier.weight(1f))
+            ActionButton(
+                label = if (state.ringing) "Rechazar" else "Colgar",
+                icon = Icons.Filled.CallEnd,
+                color = Color(0xFFE0574F),
+                enabled = !state.busy,
+                onClick = onHangup,
+                modifier = Modifier.weight(1f),
+            )
         }
         Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            ActionButton("Rechazar", Icons.Filled.PhoneDisabled, Color(0xFFE0574F), enabled = !state.busy, onClick = onReject, modifier = Modifier.weight(1f))
             ActionButton("Abrir", Icons.Filled.LockOpen, Color(0xFFE0A03A), enabled = !state.busy, onClick = onOpenDoor, modifier = Modifier.weight(1f))
+            ActionButton(
+                label = "Vídeo",
+                icon = Icons.Filled.Videocam,
+                color = Color(0xFF3F8CFF),
+                enabled = true,
+                onClick = onBack,
+                modifier = Modifier.weight(1f),
+            )
         }
         Spacer(Modifier.height(16.dp))
         Row(

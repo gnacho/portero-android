@@ -39,7 +39,7 @@ class CallViewModel(
             while (true) {
                 val result = runCatching { withContext(Dispatchers.IO) { api.state(settings) } }
                 result.onSuccess { event ->
-                    _state.value = _state.value.copy(callState = event.call)
+                    _state.value = _state.value.copy(callState = event.call, ringing = event.ringing)
                     if (!event.active) stopTalk()
                 }.onFailure {
                     _state.value = _state.value.copy(callState = "sin conexión")

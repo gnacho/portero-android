@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onAnswer = { dismissRing(); vm.answer() },
                                 onHangup = { dismissRing(); vm.hangup() },
-                                onReject = { dismissRing(); vm.reject(); showCall = false },
+                                onBack = { showCall = false },
                                 onOpenDoor = vm::openDoor,
                                 onToggleMic = vm::toggleMic,
                             )
@@ -156,7 +156,7 @@ private fun HomeScreen(
     ) {
         Text("Escuchando el videoportero", color = Color.White, style = MaterialTheme.typography.titleMedium)
         androidx.compose.foundation.layout.Spacer(Modifier.size(24.dp))
-        androidx.compose.material3.Button(onClick = onOpen) { Text("Abrir cámara") }
+        androidx.compose.material3.Button(onClick = onOpen) { Text("Ver cámara") }
         androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
         androidx.compose.material3.OutlinedButton(onClick = onChangeSettings) { Text("Cambiar servidor") }
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
