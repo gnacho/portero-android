@@ -25,7 +25,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.portero.PorteroApp
 import app.portero.data.Settings
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(
@@ -33,7 +35,7 @@ fun SettingsScreen(
     onSaved: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var url by remember { mutableStateOf(current.baseUrl.ifBlank { "https://portero.cloudless.club" }) }
+    var url by remember { mutableStateOf(current.baseUrl) }
     var token by remember { mutableStateOf(current.token) }
     var status by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -56,6 +58,7 @@ fun SettingsScreen(
             value = url,
             onValueChange = { url = it },
             label = { Text("URL del servidor") },
+            placeholder = { Text("https://tu-servidor.example") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
@@ -84,11 +87,12 @@ fun SettingsScreen(
                     val app = context.applicationContext as PorteroApp
                     app.settings.save(url, token)
                     val saved = Settings(url, token)
-                    status = runCatching { app.api.state(saved) }
-                        .fold(
-                            onSuccess = { "Conectado. Estado: ${it.call}" },
-                            onFailure = { "No se pudo conectar: ${it.message}" },
-                        )
+                    status = runCatching {
+                        withContext(Dispatchers.IO) { app.api.state(saved) }
+                    }.fold(
+                        onSuccess = { "Conectado. Estado: ${it.call}" },
+                        onFailure = { e -> "No se pudo conectar: ${e::class.simpleName}: ${e.message}" },
+                    )
                     if (status?.startsWith("Conectado") == true) onSaved()
                 }
             },

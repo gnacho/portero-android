@@ -88,6 +88,7 @@ class CallService : Service() {
     }
 
     private fun onEvent(settings: Settings, event: CallEvent) {
+        Log.i(TAG, "event call=${event.call} active=${event.active} ringing=${event.ringing}")
         if (event.ringing) {
             startRinging(settings)
         } else if (!event.active) {
@@ -98,6 +99,7 @@ class CallService : Service() {
     private fun startRinging(settings: Settings) {
         if (ringing) return
         ringing = true
+        Log.i(TAG, "startRinging: posting call notification and ringtone")
 
         val fullScreen = PendingIntent.getActivity(
             this,

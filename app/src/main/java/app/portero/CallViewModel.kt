@@ -7,12 +7,14 @@ import app.portero.data.PorteroApi
 import app.portero.data.Settings
 import app.portero.media.MicStreamer
 import app.portero.ui.CallUiState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 
 class CallViewModel(
@@ -35,7 +37,7 @@ class CallViewModel(
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
             while (true) {
-                val result = runCatching { api.state(settings) }
+                val result = runCatching { withContext(Dispatchers.IO) { api.state(settings) } }
                 result.onSuccess { event ->
                     _state.value = _state.value.copy(callState = event.call)
                     if (!event.active) stopTalk()
@@ -65,7 +67,9 @@ class CallViewModel(
         if (_state.value.busy) return
         _state.value = _state.value.copy(busy = true, message = null)
         viewModelScope.launch {
-            val error = runCatching { api.action(settings, action) }.exceptionOrNull()
+            val error = runCatching {
+                withContext(Dispatchers.IO) { api.action(settings, action) }
+            }.exceptionOrNull()
             _state.value = _state.value.copy(
                 busy = false,
                 message = when {

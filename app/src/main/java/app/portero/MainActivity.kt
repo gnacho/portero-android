@@ -3,6 +3,9 @@ package app.portero
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings as AndroidSettings
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -42,6 +45,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestPermissionsIfNeeded()
+        requestBatteryExemption()
 
         setContent {
             val app = application as PorteroApp
@@ -99,6 +103,17 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(EXTRA_INCOMING, false)) {
             recreate()
         }
+    }
+
+    /** Honour and other OEM ROMs kill background services unless the app is exempt. */
+    private fun requestBatteryExemption() {
+        val power = getSystemService(PowerManager::class.java)
+        if (power.isIgnoringBatteryOptimizations(packageName)) return
+        val intent = Intent(
+            AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:$packageName"),
+        )
+        runCatching { startActivity(intent) }
     }
 
     private fun requestPermissionsIfNeeded() {
