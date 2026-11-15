@@ -30,8 +30,8 @@ android {
         applicationId = "app.portero"
         minSdk = 29
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.1.8"
+        versionCode = 7
+        versionName = "0.1.12"
     }
 
     buildTypes {

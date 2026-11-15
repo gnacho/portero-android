@@ -43,7 +43,7 @@ class CallViewModel(
                     _state.value = _state.value.copy(callState = event.call, ringing = event.ringing)
                     // Only end the microphone when a call that was active finishes.
                     // Talking while idle is allowed: it is the intercom.
-                    if (wasActive && !event.active) stopTalk()
+                    if (wasActive && !event.active) stopTalk("call ended")
                     wasActive = event.active
                 }.onFailure {
                     _state.value = _state.value.copy(callState = "sin conexión")
@@ -56,12 +56,12 @@ class CallViewModel(
     fun answer() = action(CallAction.ANSWER)
 
     fun hangup() {
-        stopTalk()
+        stopTalk("hangup")
         action(CallAction.HANGUP)
     }
 
     fun reject() {
-        stopTalk()
+        stopTalk("reject")
         action(CallAction.REJECT)
     }
 
@@ -89,7 +89,7 @@ class CallViewModel(
 
     fun toggleMic() {
         if (_state.value.microphone) {
-            stopTalk()
+            stopTalk("user toggled off")
             return
         }
         if (!mic.start()) {
@@ -111,17 +111,28 @@ class CallViewModel(
         }
     }
 
-    private fun stopTalk() {
-        talkCall?.cancel()
+    private fun stopTalk(reason: String = "unknown") {
+        android.util.Log.i("CallViewModel", "stopTalk: $reason")
+        val call = talkCall
         talkCall = null
+        // Stopping the recorder appends the end marker, so the request body
+        // finishes by itself and the server closes the doorbell channel
+        // cleanly. Cancel only as a fallback if the request does not end.
         mic.stop()
+        if (call != null) {
+            viewModelScope.launch {
+                delay(1_500)
+                call.cancel()
+            }
+        }
         if (_state.value.microphone) {
             _state.value = _state.value.copy(microphone = false)
         }
     }
 
     override fun onCleared() {
-        stopTalk()
+        android.util.Log.i("CallViewModel", "onCleared")
+        stopTalk("viewmodel cleared")
         pollJob?.cancel()
         super.onCleared()
     }
