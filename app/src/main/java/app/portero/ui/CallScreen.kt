@@ -67,7 +67,9 @@ fun CallScreen(
 ) {
     Column(modifier = modifier.fillMaxSize().background(Color.Black)) {
         Box {
-            VideoSurface(url = url, token = token, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            ZoomableBox(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                PlayerSurface(url = url, token = token)
+            }
             IconButton(
                 onClick = onBack,
                 modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
@@ -168,49 +170,5 @@ private fun ActionButton(
         Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
         Spacer(Modifier.size(8.dp))
         Text(label, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun VideoSurface(url: String, token: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val player = remember {
-        val dataSource = DefaultHttpDataSource.Factory()
-            .setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
-            .setAllowCrossProtocolRedirects(true)
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(500, 3000, 300, 300)
-            .build()
-        ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
-            val source = HlsMediaSource.Factory(dataSource)
-                .createMediaSource(
-                    MediaItem.Builder()
-                        .setUri(url)
-                        .setMimeType(MimeTypes.APPLICATION_M3U8)
-                        .setLiveConfiguration(
-                            MediaItem.LiveConfiguration.Builder()
-                                .setTargetOffsetMs(1_200)
-                                .build(),
-                        )
-                        .build(),
-                )
-            setMediaSource(source)
-            prepare()
-            playWhenReady = true
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose { player.release() }
-    }
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = false
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
     }
 }

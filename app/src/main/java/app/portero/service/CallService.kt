@@ -19,25 +19,23 @@ import app.portero.MainActivity
 import app.portero.PorteroApp
 import app.portero.R
 import app.portero.data.CallEvent
-import app.portero.data.Settings
+import app.portero.data.Server
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Keeps the event stream open so the phone rings when somebody presses the
- * doorbell, even with the app in the background. The connection is the only way
- * to receive the call without a push service.
+ * Keeps one event stream per configured server so the phone rings when any
+ * doorbell is pressed, without a push service.
  */
 class CallService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var streamJob: Job? = null
+    private val streams = mutableMapOf<String, Job>()
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var ringing = false
@@ -69,34 +67,41 @@ class CallService : Service() {
     }
 
     private fun connect() {
-        streamJob?.cancel()
-        streamJob = scope.launch {
-            while (true) {
-                val settings = settingsRepo.settings.first()
-                if (!settings.configured) {
-                    delay(5_000)
-                    continue
+        scope.launch {
+            settingsRepo.servers.collect { servers ->
+                val wanted = servers.filter { it.configured }.associateBy { it.normalizedBase() }
+                (streams.keys - wanted.keys).forEach { streams.remove(it)?.cancel() }
+                wanted.forEach { (base, server) ->
+                    if (streams[base] == null) {
+                        streams[base] = scope.launch { loop(server) }
+                    }
                 }
-                try {
-                    api.events(settings).collect { event -> onEvent(settings, event) }
-                } catch (e: Exception) {
-                    Log.w(TAG, "event stream ended: ${e.message}")
-                }
-                delay(2_000)
+                Log.i(TAG, "watching ${wanted.size} server(s)")
             }
         }
     }
 
-    private fun onEvent(settings: Settings, event: CallEvent) {
-        Log.i(TAG, "event call=${event.call} active=${event.active} ringing=${event.ringing}")
+    private suspend fun loop(server: Server) {
+        while (true) {
+            try {
+                api.events(server).collect { event -> onEvent(server, event) }
+            } catch (e: Exception) {
+                Log.w(TAG, "event stream (${server.name}): ${e.message}")
+            }
+            delay(2_000)
+        }
+    }
+
+    private fun onEvent(server: Server, event: CallEvent) {
+        Log.i(TAG, "event ${server.name} call=${event.call} active=${event.active} ringing=${event.ringing}")
         if (event.ringing) {
-            startRinging(settings)
+            startRinging(server)
         } else if (!event.active) {
             stopRinging()
         }
     }
 
-    private fun startRinging(settings: Settings) {
+    private fun startRinging(server: Server) {
         if (ringing) return
         ringing = true
         Log.i(TAG, "startRinging: posting call notification and ringtone")
@@ -106,13 +111,14 @@ class CallService : Service() {
             1,
             Intent(this, MainActivity::class.java)
                 .putExtra(MainActivity.EXTRA_INCOMING, true)
+                .putExtra(MainActivity.EXTRA_SERVER, server.normalizedBase())
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
         val notification = Notification.Builder(this, CHANNEL_CALL)
             .setSmallIcon(android.R.drawable.sym_action_call)
-            .setContentTitle(getString(R.string.app_name))
+            .setContentTitle(server.name.ifBlank { getString(R.string.app_name) })
             .setContentText("Llaman a la puerta")
             .setCategory(Notification.CATEGORY_CALL)
             .setPriority(Notification.PRIORITY_MAX)
@@ -120,13 +126,6 @@ class CallService : Service() {
             .setAutoCancel(false)
             .setFullScreenIntent(fullScreen, true)
             .setContentIntent(fullScreen)
-            .addAction(
-                Notification.Action.Builder(
-                    null,
-                    "Abrir portero",
-                    fullScreen,
-                ).build(),
-            )
             .build()
 
         notificationManager().notify(CALL_NOTIFICATION_ID, notification)
@@ -180,7 +179,7 @@ class CallService : Service() {
         Notification.Builder(this, CHANNEL_SERVICE)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText("Escuchando el videoportero")
+            .setContentText("Escuchando los videporteros")
             .setOngoing(true)
             .setContentIntent(
                 PendingIntent.getActivity(
@@ -222,6 +221,7 @@ class CallService : Service() {
 
     override fun onDestroy() {
         stopRinging()
+        streams.values.forEach { it.cancel() }
         scope.cancel()
         super.onDestroy()
     }

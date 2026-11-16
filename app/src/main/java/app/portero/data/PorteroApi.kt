@@ -22,10 +22,32 @@ class PorteroApi(private val client: OkHttpClient = defaultClient()) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun events(settings: Settings): Flow<CallEvent> = callbackFlow {
+    fun devices(server: Server): List<Device> {
         val request = Request.Builder()
-            .url(settings.eventsUrl())
-            .header("Authorization", "Bearer ${settings.token}")
+            .url(server.devicesUrl())
+            .header("Authorization", "Bearer ${server.token}")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("devices ${response.code}")
+            return json.decodeFromString<List<Device>>(response.body.string())
+        }
+    }
+
+    fun snapshot(server: Server, deviceId: String): ByteArray {
+        val request = Request.Builder()
+            .url(server.snapshotUrl(deviceId))
+            .header("Authorization", "Bearer ${server.token}")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("snapshot ${response.code}")
+            return response.body.bytes()
+        }
+    }
+
+    fun events(server: Server): Flow<CallEvent> = callbackFlow {
+        val request = Request.Builder()
+            .url(server.eventsUrl())
+            .header("Authorization", "Bearer ${server.token}")
             .header("Accept", "text/event-stream")
             .build()
 
@@ -44,10 +66,10 @@ class PorteroApi(private val client: OkHttpClient = defaultClient()) {
         awaitClose { source.cancel() }
     }
 
-    suspend fun state(settings: Settings): CallEvent {
+    suspend fun state(server: Server): CallEvent {
         val request = Request.Builder()
-            .url(settings.stateUrl())
-            .header("Authorization", "Bearer ${settings.token}")
+            .url(server.stateUrl())
+            .header("Authorization", "Bearer ${server.token}")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("state ${response.code}")
@@ -56,11 +78,11 @@ class PorteroApi(private val client: OkHttpClient = defaultClient()) {
         }
     }
 
-    suspend fun action(settings: Settings, action: CallAction) {
+    suspend fun action(server: Server, action: CallAction) {
         val payload = """{"action":"${action.wire}"}""".toRequestBody(JSON)
         val request = Request.Builder()
-            .url(settings.actionUrl())
-            .header("Authorization", "Bearer ${settings.token}")
+            .url(server.actionUrl())
+            .header("Authorization", "Bearer ${server.token}")
             .post(payload)
             .build()
         client.newCall(request).execute().use { response ->
@@ -68,21 +90,21 @@ class PorteroApi(private val client: OkHttpClient = defaultClient()) {
         }
     }
 
-    fun talkRequest(settings: Settings, body: RequestBody): Request =
+    fun talkRequest(server: Server, body: RequestBody): Request =
         Request.Builder()
-            .url(settings.talkUrl())
-            .header("Authorization", "Bearer ${settings.token}")
+            .url(server.talkUrl())
+            .header("Authorization", "Bearer ${server.token}")
             .header("Content-Type", "audio/basic")
             .post(body)
             .build()
 
-    fun startTalk(settings: Settings, body: RequestBody, onDone: (Throwable?) -> Unit): Call {
-        android.util.Log.i("PorteroApi", "talk: opening ${settings.talkUrl()}")
+    fun startTalk(server: Server, body: RequestBody, onDone: (Throwable?) -> Unit): Call {
+        android.util.Log.i("PorteroApi", "talk: opening ${server.talkUrl()}")
         val call = client.newBuilder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .writeTimeout(0, TimeUnit.MILLISECONDS)
             .build()
-            .newCall(talkRequest(settings, body))
+            .newCall(talkRequest(server, body))
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 android.util.Log.w("PorteroApi", "talk failed: ${e::class.simpleName}: ${e.message}", e)

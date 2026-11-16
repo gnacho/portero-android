@@ -4,37 +4,42 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.PowerManager
-import android.provider.Settings as AndroidSettings
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
-import app.portero.data.Settings
+import app.portero.data.Device
+import app.portero.data.Server
 import app.portero.service.CallService
 import app.portero.ui.CallScreen
+import app.portero.ui.CameraScreen
+import app.portero.ui.DeviceCard
+import app.portero.ui.HomeScreen
 import app.portero.ui.SettingsScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -49,49 +54,103 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val app = application as PorteroApp
-            var settings by remember { mutableStateOf<Settings?>(null) }
-            var showCall by remember { mutableStateOf(intent.getBooleanExtra(EXTRA_INCOMING, false)) }
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
 
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                settings = app.settings.settings.first()
-                if (settings?.configured == true) {
-                    CallService.start(this@MainActivity)
+            var servers by remember { mutableStateOf<List<Server>>(emptyList()) }
+            var cards by remember { mutableStateOf<List<DeviceCard>>(emptyList()) }
+            var loading by remember { mutableStateOf(true) }
+            var error by remember { mutableStateOf<String?>(null) }
+            var showSettings by remember { mutableStateOf(false) }
+            var callCard by remember { mutableStateOf<DeviceCard?>(null) }
+            var camera by remember { mutableStateOf<DeviceCard?>(null) }
+            var reload by remember { mutableStateOf(0) }
+
+            LaunchedEffect(Unit) {
+                servers = app.settings.servers.first()
+                if (servers.any { it.configured }) CallService.start(context)
+                val requested = intent.getStringExtra(EXTRA_SERVER)
+                if (intent.getBooleanExtra(EXTRA_INCOMING, false)) {
+                    val server = servers.firstOrNull { it.normalizedBase() == requested } ?: servers.firstOrNull()
+                    if (server != null) {
+                        callCard = DeviceCard(
+                            server,
+                            Device(id = "portero", name = server.name, kind = "doorbell", stream = "hikvision-doorbell"),
+                        )
+                    }
                 }
             }
 
-            val current = settings
+            LaunchedEffect(servers, reload) {
+                loading = true
+                error = null
+                cards = withContext(Dispatchers.IO) {
+                    servers.filter { it.configured }.flatMap { server ->
+                        runCatching { app.api.devices(server).map { DeviceCard(server, it) } }
+                            .onFailure { error = "${server.name.ifBlank { server.baseUrl }}: ${it.message?.lineSequence()?.first()}" }
+                            .getOrDefault(emptyList())
+                    }
+                }
+                loading = false
+            }
+
             MaterialTheme(colorScheme = darkScheme) {
                 Box(Modifier.fillMaxSize().background(Color(0xFF0B0F14))) {
                     when {
-                        current == null -> Text("Cargando…", color = Color.White)
-                        !current.configured -> SettingsScreen(
-                            current = current,
-                            onSaved = {
-                                lifecycleScope.launch {
-                                    settings = app.settings.settings.first()
-                                    CallService.start(this@MainActivity)
+                        showSettings -> SettingsScreen(
+                            servers = servers,
+                            onBack = { showSettings = false },
+                            onChanged = {
+                                scope.launch {
+                                    servers = app.settings.servers.first()
+                                    reload += 1
+                                    if (servers.any { it.configured }) CallService.start(context)
                                 }
                             },
                         )
-                        showCall -> {
-                            androidx.compose.runtime.LaunchedEffect(Unit) { dismissRing() }
-                            val vm = remember(current) { CallViewModel(app.api, current) }
+
+                        camera != null -> CameraScreen(
+                            api = app.api,
+                            server = camera!!.server,
+                            device = camera!!.device,
+                            onBack = { camera = null },
+                        )
+
+                        callCard != null -> {
+                            LaunchedEffect(callCard) { dismissRing() }
+                            val card = callCard!!
+                            val vm = remember(card.server) { CallViewModel(app.api, card.server) }
                             val state by vm.state.collectAsStateWithLifecycle()
                             CallScreen(
-                                url = current.hlsUrl(),
-                                token = current.token,
+                                url = card.server.hlsUrl(card.device.stream.ifBlank { "hikvision-doorbell" }),
+                                token = card.server.token,
                                 state = state,
                                 onAnswer = { dismissRing(); vm.answer() },
                                 onHangup = { dismissRing(); vm.hangup() },
-                                onBack = { showCall = false },
+                                onBack = { callCard = null },
                                 onOpenDoor = vm::openDoor,
                                 onToggleMic = vm::toggleMic,
                             )
                         }
+
+                        servers.none { it.configured } -> Box(
+                            Modifier.fillMaxSize(),
+                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                        ) {
+                            Text("Añade un servidor en los ajustes", color = Color.White)
+                        }
+
                         else -> HomeScreen(
-                            settings = current,
-                            onOpen = { showCall = true },
-                            onChangeSettings = { settings = current.copy(baseUrl = "", token = "") },
+                            api = app.api,
+                            cards = cards,
+                            loading = loading,
+                            error = error,
+                            cacheDir = cacheDir,
+                            onOpen = { card ->
+                                if (card.device.doorbell) callCard = card else camera = card
+                            },
+                            onSettings = { showSettings = true },
+                            onRefresh = { reload += 1 },
                         )
                     }
                 }
@@ -101,12 +160,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_INCOMING, false)) {
-            recreate()
-        }
+        if (intent.getBooleanExtra(EXTRA_INCOMING, false)) recreate()
     }
 
-    /** Honour and other OEM ROMs kill background services unless the app is exempt. */
+    private fun dismissRing() {
+        startService(Intent(this, CallService::class.java).setAction(CallService.ACTION_DISMISS))
+    }
+
     private fun requestBatteryExemption() {
         val power = getSystemService(PowerManager::class.java)
         if (power.isIgnoringBatteryOptimizations(packageName)) return
@@ -115,11 +175,6 @@ class MainActivity : ComponentActivity() {
             Uri.parse("package:$packageName"),
         )
         runCatching { startActivity(intent) }
-    }
-
-    /** Stops the ringtone and removes the call notification. */
-    private fun dismissRing() {
-        startService(Intent(this, CallService::class.java).setAction(CallService.ACTION_DISMISS))
     }
 
     private fun requestPermissionsIfNeeded() {
@@ -135,6 +190,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_INCOMING = "incoming_call"
+        const val EXTRA_SERVER = "server"
         private val darkScheme = darkColorScheme(
             primary = Color(0xFF3F8CFF),
             background = Color(0xFF0B0F14),
@@ -143,23 +199,5 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@androidx.compose.runtime.Composable
-private fun HomeScreen(
-    settings: Settings,
-    onOpen: () -> Unit,
-    onChangeSettings: () -> Unit,
-) {
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-    ) {
-        Text("Escuchando el videoportero", color = Color.White, style = MaterialTheme.typography.titleMedium)
-        androidx.compose.foundation.layout.Spacer(Modifier.size(24.dp))
-        androidx.compose.material3.Button(onClick = onOpen) { Text("Ver cámara") }
-        androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
-        androidx.compose.material3.OutlinedButton(onClick = onChangeSettings) { Text("Cambiar servidor") }
-        androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
-        Text(settings.normalizedBase(), color = Color(0xFF93A1B3), style = MaterialTheme.typography.bodySmall)
-    }
-}
+@Suppress("unused")
+private fun unusedDevice(d: Device) = d

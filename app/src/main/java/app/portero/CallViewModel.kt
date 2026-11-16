@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.portero.data.CallAction
 import app.portero.data.PorteroApi
-import app.portero.data.Settings
+import app.portero.data.Server
 import app.portero.media.MicStreamer
 import app.portero.ui.CallUiState
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +19,7 @@ import okhttp3.Call
 
 class CallViewModel(
     private val api: PorteroApi,
-    private val settings: Settings,
+    private val server: Server,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(CallUiState())
@@ -38,7 +38,7 @@ class CallViewModel(
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
             while (true) {
-                val result = runCatching { withContext(Dispatchers.IO) { api.state(settings) } }
+                val result = runCatching { withContext(Dispatchers.IO) { api.state(server) } }
                 result.onSuccess { event ->
                     _state.value = _state.value.copy(callState = event.call, ringing = event.ringing)
                     // Only end the microphone when a call that was active finishes.
@@ -72,7 +72,7 @@ class CallViewModel(
         _state.value = _state.value.copy(busy = true, message = null)
         viewModelScope.launch {
             val error = runCatching {
-                withContext(Dispatchers.IO) { api.action(settings, action) }
+                withContext(Dispatchers.IO) { api.action(server, action) }
             }.exceptionOrNull()
             _state.value = _state.value.copy(
                 busy = false,
@@ -111,7 +111,7 @@ class CallViewModel(
             return
         }
         _state.value = _state.value.copy(microphone = true, message = "Hablando…")
-        talkCall = api.startTalk(settings, mic.body()) { error ->
+        talkCall = api.startTalk(server, mic.body()) { error ->
             mic.stop()
             talkCall = null
             _state.value = _state.value.copy(
